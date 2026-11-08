@@ -28,7 +28,7 @@ static NSString * const RYMDAutoSkipEnabledKey = @"RYMDAutoSkipEnabled";
 static NSString * const RYMDMinimumDislikesKey = @"RYMDMinimumDislikes";
 static NSString * const RYMDMinimumRatioKey = @"RYMDMinimumDislikeLikeRatio";
 
-static NSString * const RYMDAccountButtonTitle = @"Return YouTube Music Dislikes";
+static NSString * const RYMDAccountButtonTitle = @"Return YTMusic Dislikes MaxMusic";
 
 NSBundle *RYMDBundle(void) {
     static NSBundle *bundle = nil;
