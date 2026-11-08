@@ -1,9 +1,9 @@
-Package: com.ps.returnytmdislikes
+Package: com.mark02-2012.returnytmdislikes
 Name: Return YouTube Music Dislike
 Version: 1.2.3
 Architecture: iphoneos-arm
 Description: Brings Back Dislikes On iOS YouTube Music
-Maintainer: PoomSmart <ytdislikesreturn@gmail.com>
+Maintainer: Mark02-2012 
 Author: PoomSmart <ytdislikesreturn@gmail.com>
 Section: Tweaks
 Depends: mobilesubstrate (>= 0.9.5000), firmware (>= 11.0)
