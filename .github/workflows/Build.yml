@@ -36,9 +36,7 @@ jobs:
           ${{ github.workspace }}/theos/include/YouTubeMusicHeader
 
       - name: Clone Return-YouTube-Dislikes
-        run: |
-          git clone --quiet --depth=1 https://github.com/PoomSmart/Return-YouTube-Dislikes.git Return-YouTube-Dislikes
-
+        run: git clone --quiet --depth=1 https://github.com/PoomSmart/Return-YouTube-Dislikes.git ../Return-YouTube-Dislikes
 
       - name: Build Package
         run: |
