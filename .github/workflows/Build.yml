@@ -35,6 +35,11 @@ jobs:
           git clone --depth=1 https://github.com/PoomSmart/YouTubeMusicHeader.git \
           ${{ github.workspace }}/theos/include/YouTubeMusicHeader
 
+      - name: Clone PSHeader 
+        run: |
+          git clone --depth=1 https://github.com/PoomSmart/PSHeader.git \
+          ${{ github.workspace }}/theos/include/PSHeader 
+
       - name: Clone Return-YouTube-Dislikes
         run: git clone --quiet --depth=1 https://github.com/PoomSmart/Return-YouTube-Dislikes.git ../Return-YouTube-Dislikes
 
