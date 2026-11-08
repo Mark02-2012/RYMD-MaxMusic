@@ -21,10 +21,7 @@
 
 // -----------------------------------------------------------------------------
 // RYMD Auto Skip — private YouTube Music queue interface
-//
-// These declarations are based on the YTM queue interface used by NextUp 3.
-// The public source was built against YTM 9.28.4; this fork is being attempted
-// against 9.44, so every private access below is guarded at runtime.
+// Based on the YTQueueController interface used by NextUp 3.
 // -----------------------------------------------------------------------------
 @interface YTQueueController : NSObject
 @property (readonly, nonatomic) unsigned long long queueCount;
@@ -41,6 +38,12 @@
 - (void)advanceToNextWithAutoplay:(BOOL)autoplay
   isPlaybackControllerInternalTransition:(BOOL)transition
                     unplayableVideoID:(id)videoID;
+// Queue mutation hooks also used by NextUp 3. In particular,
+// insertQueueItems:atIndex: is the common insertion funnel used by YTM queue edits.
+- (void)insertQueueItems:(id)items atIndex:(unsigned long long)index;
+- (void)removeItemAtIndexPath:(id)path userTriggered:(BOOL)triggered;
+- (void)moveItemAtIndexPath:(id)from toIndexPath:(id)to userTriggered:(BOOL)triggered;
+- (void)removeVideoID:(id)videoID;
 @end
 
 @protocol RYMDVideoIDProviding <NSObject>
@@ -55,19 +58,19 @@ __strong NSMutableAttributedString *mutableDislikeText = nil;
 
 int overrideNodeCreation = 0;
 
-// New preference keys. Settings.x must use these exact strings.
+// These keys must match Settings.x.
 static NSString * const RYMDAutoSkipEnabledKey = @"RYMDAutoSkipEnabled";
 static NSString * const RYMDMinimumDislikesKey = @"RYMDMinimumDislikes";
 static NSString * const RYMDMinimumRatioKey = @"RYMDMinimumDislikeLikeRatio";
 
-// The live controller is captured from YTM's own queue hooks.
+// The live controller is captured from YTM's queue hooks.
 static __weak YTQueueController *rymQueueController = nil;
 static NSString *rymLastRequestedVideoID = nil;
 
 static BOOL RYMDAutoSkipEnabled(void) {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     id value = [defaults objectForKey:RYMDAutoSkipEnabledKey];
-    return value ? [value boolValue] : NO; // deliberately OFF by default
+    return value ? [value boolValue] : NO;
 }
 
 static double RYMDMinimumDislikes(void) {
@@ -92,8 +95,8 @@ static NSString *getVideoId(ASDisplayNode *containerNode) {
     return vc.likeButtonRenderer.target.videoId;
 }
 
-// Reads the current item from YTQueueController. Do not infer the current item
-// from a stale callback: the API response may arrive after the user changed song.
+// Reads the current item from YTQueueController. Never infer the active item
+// from an old callback: the API result may arrive after the user changes tracks.
 static NSString *RYMDCurrentQueueVideoID(YTQueueController *controller) {
     if (!controller) return nil;
 
@@ -110,6 +113,7 @@ static NSString *RYMDCurrentQueueVideoID(YTQueueController *controller) {
 
         id renderer = [controller videoRendererAtIndex:index];
         if (!renderer || ![renderer respondsToSelector:@selector(videoId)]) return nil;
+
         NSString *videoID = [(id<RYMDVideoIDProviding>)renderer videoId];
         return [videoID isKindOfClass:[NSString class]] && videoID.length ? videoID : nil;
     } @catch (NSException *exception) {
@@ -120,7 +124,8 @@ static NSString *RYMDCurrentQueueVideoID(YTQueueController *controller) {
 
 static void RYMDCheckCurrentTrackForAutoSkip(void);
 
-// Runs only after YTM has had a moment to update its queue/current index.
+// Check after YTM completes the queue/playback update. A short delay is kept
+// because some callbacks are issued while the new queue is still being applied.
 static void RYMDQueueDidChange(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
@@ -165,15 +170,13 @@ static void RYMDPlayNextForVideoID(NSString *videoID) {
             unsigned long long nextIndex = controller.nextNavigableVideoIndex;
 
             // Refuse repeat-all wraparound (next index at/before current index).
-            // Removing or jumping into the history section can corrupt YTM's queue.
             if (count == 0 || currentIndex >= count || nextIndex >= count || nextIndex <= currentIndex) {
                 HBLogDebug(@"RYMD Auto Skip: refusing invalid/wrapped index (current %llu, next %llu, count %llu)",
                            currentIndex, nextIndex, count);
                 return;
             }
 
-            // NextUp 3 uses this native YTM method for "play the upcoming track now".
-            // This advances playback; it does NOT remove the current song from history.
+            // Native YTM method used by NextUp 3 to play the upcoming queue item.
             [controller playItemAtIndex:nextIndex];
             HBLogDebug(@"RYMD Auto Skip: skipped %@ → queue index %llu", videoID, nextIndex);
         } @catch (NSException *exception) {
@@ -189,8 +192,8 @@ static void RYMDCheckCurrentTrackForAutoSkip(void) {
     NSString *videoID = RYMDCurrentQueueVideoID(controller);
     if (videoID.length == 0) return;
 
-    // Several YTM callbacks can describe the same current song. Start one API
-    // lookup per consecutive play of a video, even if the UI is rebuilt.
+    // Several callbacks can describe the same track. Start one API lookup per
+    // consecutive play of a video, even when YTM rebuilds the player UI.
     if ([rymLastRequestedVideoID isEqualToString:videoID]) return;
     rymLastRequestedVideoID = [videoID copy];
 
@@ -201,8 +204,7 @@ static void RYMDCheckCurrentTrackForAutoSkip(void) {
             return;
         }
 
-        // Always use the standard estimated counts from the API. Do not use
-        // rawDislikes, even if an old preference value is still present.
+        // Auto Skip uses only the standard estimated API counts, never rawDislikes.
         id likesObject = data[@"likes"];
         id dislikesObject = data[@"dislikes"];
         if (![likesObject isKindOfClass:[NSNumber class]] ||
@@ -225,7 +227,7 @@ static void RYMDCheckCurrentTrackForAutoSkip(void) {
         HBLogDebug(@"RYMD Auto Skip: %@ — likes %.0f, dislikes %.0f, ratio %.2f%% (limits %.0f / %.2f%%)",
                    videoID, likes, dislikes, ratio, minimumDislikes, minimumRatio);
 
-        // Both thresholds are required. Meeting only one is not sufficient.
+        // Both thresholds are required.
         if (dislikes < minimumDislikes || ratio < minimumRatio) return;
 
         HBLogDebug(@"RYMD Auto Skip: %@ matched both thresholds", videoID);
@@ -265,11 +267,13 @@ static void getVoteAndModifyButtons(
 - (void)updateLikeDislikeButtonWithRenderer:(YTILikeButtonRenderer *)renderer {
     %orig;
     if (!TweakEnabled() || renderer.target.videoId == nil) return;
+
     MDCButton *likeButton = [self valueForKey:@"_likeButton"];
     MDCButton *dislikeButton = [self valueForKey:@"_dislikeButton"];
     [dislikeButton setTitle:FETCHING forState:UIControlStateNormal];
     [dislikeButton ytm_sizeToFitWithSize:1];
     [self setNeedsLayout];
+
     getVoteFromVideoWithHandler(cache, renderer.target.videoId, maxRetryCount, ^(NSDictionary *data, NSString *error) {
         if (ExactLikeNumber()) {
             NSString *likeText = getNormalizedDislikes(getLikeData(data), error);
@@ -279,6 +283,7 @@ static void getVoteAndModifyButtons(
                 [self setNeedsLayout];
             });
         }
+
         NSString *dislikeText = getNormalizedDislikes(getDislikeData(data), error);
         dispatch_async(dispatch_get_main_queue(), ^{
             [dislikeButton setTitle:dislikeText forState:UIControlStateNormal];
@@ -299,6 +304,7 @@ static void getVoteAndModifyButtons(
         ASDisplayNode *containerNode = [likeDislikeCell node];
         NSString *videoId = getVideoId(containerNode);
         if (videoId == nil) return node;
+
         int pairMode = -1;
         BOOL isDislikeButtonModified = NO;
         do {
@@ -306,23 +312,22 @@ static void getVoteAndModifyButtons(
             if (containerNode.yogaChildren.count == 2)
                 containerNode = containerNode.yogaChildren[1];
         } while (containerNode.yogaChildren.count == 1);
+
         ELMContainerNode *likeNode = [containerNode.yogaChildren firstObject];
-        // if (![likeNode.accessibilityIdentifier isEqualToString:@"id.video.like.button"]) {
-        //     HBLogDebug(@"RYMD: Like button not found, instead found %@", likeNode.accessibilityIdentifier);
-        //     return node;
-        // }
         if (likeNode.yogaChildren.count == 2) {
             ELMContainerNode *dislikeNode = [containerNode.yogaChildren lastObject];
             isDislikeButtonModified = dislikeNode.yogaChildren.count == 2;
             id targetNode = likeNode.yogaChildren[1];
             likeTextNode = (ELMTextNode *)targetNode;
-            if (isDislikeButtonModified)
+
+            if (isDislikeButtonModified) {
                 dislikeTextNode = dislikeNode.yogaChildren[1];
-            else {
+            } else {
                 id elementContext = [likeTextNode valueForKey:@"_context"];
                 overrideNodeCreation = 2;
                 dislikeTextNode = [[%c(ELMNodeFactory) sharedInstance] nodeWithElement:likeTextNode.element materializationContext:&elementContext];
                 overrideNodeCreation = 0;
+
                 mutableDislikeText = [[NSMutableAttributedString alloc] initWithAttributedString:likeTextNode.attributedText];
                 dislikeTextNode.attributedText = mutableDislikeText;
                 [dislikeNode addYogaChild:dislikeTextNode];
@@ -336,6 +341,7 @@ static void getVoteAndModifyButtons(
             mutableDislikeText.mutableString.string = FETCHING;
             dislikeTextNode.attributedText = mutableDislikeText;
         }
+
         BOOL shouldFetchVote = ExactLikeNumber() || !isDislikeButtonModified;
         if (shouldFetchVote) {
             getVoteAndModifyButtons(
@@ -356,6 +362,9 @@ static void getVoteAndModifyButtons(
                             break;
                         case 0:
                             dislikeString = [NSString stringWithFormat:@"  %@ ", dislikeCount];
+                            break;
+                        default:
+                            dislikeString = dislikeCount;
                             break;
                     }
                     mutableDislikeText.mutableString.string = dislikeString;
@@ -394,8 +403,9 @@ static void getVoteAndModifyButtons(
 %end
 
 // -----------------------------------------------------------------------------
-// YTQueueController hooks — capture the live YTM queue and re-check the active
-// track after every relevant playback transition / explicit queue navigation.
+// YTQueueController hooks — capture the live queue and re-check after playback
+// transitions AND queue mutation. insertQueueItems:atIndex: is the extra hook
+// intended to catch direct selection from the classic playlist view.
 // -----------------------------------------------------------------------------
 %hook YTQueueController
 
@@ -440,6 +450,33 @@ static void getVoteAndModifyButtons(
 - (void)advanceToNextWithAutoplay:(BOOL)autoplay
   isPlaybackControllerInternalTransition:(BOOL)transition
                     unplayableVideoID:(id)videoID {
+    %orig;
+    rymQueueController = self;
+    RYMDQueueDidChange();
+}
+
+// NextUp 3 identifies this as the common YTM queue-insertion funnel. A direct
+// playlist selection can replace/populate the queue through this route even
+// when it does not call playItemAtIndex: or the playlist-panel update hook.
+- (void)insertQueueItems:(id)items atIndex:(unsigned long long)index {
+    %orig;
+    rymQueueController = self;
+    RYMDQueueDidChange();
+}
+
+- (void)removeItemAtIndexPath:(id)path userTriggered:(BOOL)triggered {
+    %orig;
+    rymQueueController = self;
+    RYMDQueueDidChange();
+}
+
+- (void)moveItemAtIndexPath:(id)from toIndexPath:(id)to userTriggered:(BOOL)triggered {
+    %orig;
+    rymQueueController = self;
+    RYMDQueueDidChange();
+}
+
+- (void)removeVideoID:(id)videoID {
     %orig;
     rymQueueController = self;
     RYMDQueueDidChange();
