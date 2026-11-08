@@ -56,10 +56,10 @@ jobs:
           cp ReturnYouTubeMusicDislikes.plist output/
           
           # Move the compiled dylib into the output folder for easy sideload access
-          if [ -f .theos/obj/RYMD.dylib ]; then
-            cp .theos/obj/RYMD.dylib output/
-          elif [ -f .theos/obj/debug/RYMD.dylib ]; then
-            cp .theos/obj/debug/RYMD.dylib output/
+          if [ -f .theos/obj/ReturnYouTubeMusicDislikes.dylib ]; then
+            cp .theos/obj/ReturnYouTubeMusicDislikes.dylib output/
+          elif [ -f .theos/obj/debug/ReturnYouTubeMusicDislikes.dylib ]; then
+            cp .theos/obj/debug/ReturnYouTubeMusicDislikes.dylib output/
           fi
 
       - name: Generate Release Tag
