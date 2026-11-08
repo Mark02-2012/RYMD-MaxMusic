@@ -52,7 +52,7 @@ NSBundle *RYMDBundle(void) {
     [super viewDidLoad];
 
     self.title = RYMDAccountButtonTitle;
-    self.view.backgroundColor = [UIColor groupTableViewBackgroundColor];
+    self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
 
     self.tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleGrouped];
     self.tableView.translatesAutoresizingMaskIntoConstraints = NO;
