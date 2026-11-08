@@ -45,13 +45,13 @@ jobs:
         run: |
           mkdir -p output
           cp packages/*.deb output/
-          cp RYMD.plist output/
+          cp ReturnYouTubeMusicDislikes.plist output/
           
           # Move the compiled dylib into the output folder for easy sideload access
-          if [ -f .theos/obj/YTLocalQueue.dylib ]; then
-            cp .theos/obj/YTLocalQueue.dylib output/
-          elif [ -f .theos/obj/debug/YTLocalQueue.dylib ]; then
-            cp .theos/obj/debug/YTLocalQueue.dylib output/
+          if [ -f .theos/obj/RYMD.dylib ]; then
+            cp .theos/obj/RYMD.dylib output/
+          elif [ -f .theos/obj/debug/RYMD.dylib ]; then
+            cp .theos/obj/debug/RYMD.dylib output/
           fi
 
       - name: Generate Release Tag
@@ -65,7 +65,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: YTLocalQueue ${{ steps.tag.outputs.version }}
+          name: RYMD-MaxMusic ${{ steps.tag.outputs.version }}
           files: output/*
           draft: true
           fail_on_unmatched_files: false
